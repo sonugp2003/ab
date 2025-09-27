@@ -103,7 +103,7 @@ export default function Home() {
                 <p className="text-muted-foreground mb-12">Select how you'd like to use this application.</p>
                 <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
                     {useCases.map(uc => (
-                         <Card key={uc.key} className="cursor-pointer rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-primary/30 bg-card/60 backdrop-blur-sm border-primary/20">
+                         <Card key={uc.key} className="cursor-pointer rounded-xl shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-primary/30 bg-card/10 backdrop-blur-md border-primary/20">
                             <CardHeader className="items-center text-center">
                                 {uc.icon}
                                 <CardTitle className="mt-4 text-3xl">{uc.title}</CardTitle>
