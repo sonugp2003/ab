@@ -4,7 +4,6 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
-import { ToasterProvider } from "@/hooks/use-toast";
 import { UseCaseProvider } from "@/context/use-case-context";
 import { FirebaseClientProvider } from "@/firebase";
 
@@ -33,7 +32,6 @@ export default function RootLayout({
       <body className={`${inter.className} safe-area`}>
         <FirebaseClientProvider>
           <UseCaseProvider>
-            <ToasterProvider>
               <ThemeProvider
                 attribute="class"
                 defaultTheme="system"
@@ -43,7 +41,6 @@ export default function RootLayout({
                 {children}
                 <Toaster />
               </ThemeProvider>
-            </ToasterProvider>
           </UseCaseProvider>
         </FirebaseClientProvider>
       </body>
