@@ -12,9 +12,8 @@ import { Home, Loader2, AlertCircle } from 'lucide-react';
 import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
 import { auth, db, googleProvider } from '@/lib/firebase';
 import { useUseCase } from '@/context/use-case-context';
-import { collection, getDocs, query, where, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
 import Image from 'next/image';
 
 export default function OwnerLoginPage() {
@@ -73,26 +72,23 @@ export default function OwnerLoginPage() {
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
-        // This is a new Google Sign-In user, create a document for them.
-        // We need more info, so redirect them to a more complete registration form.
-        // For simplicity now, we can auto-create a document with partial info
-        // and let them update it later.
-        await addDoc(collection(db, terminology.owner.collectionName), {
-          uid: user.uid,
-          name: user.displayName || 'New User',
-          email: user.email,
-          mobileNumber: user.phoneNumber || '',
-          address: '', // Needs to be filled in later
-          upiId: '', // Needs to be filled in later
-          createdAt: serverTimestamp(),
-        });
+        // This is a new user for this use case.
+        // Redirect them to the registration page to complete their profile.
+        // We can pass their details in session storage to pre-fill the form.
+        if (typeof window !== 'undefined') {
+            sessionStorage.setItem('google_auth_user', JSON.stringify({
+                displayName: user.displayName,
+                email: user.email
+            }));
+        }
+        router.push('/owner/register');
+      } else {
+        // This is an existing user, log them in.
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ownerEmail', user.email || '');
+        }
+        router.push('/owner/dashboard');
       }
-      
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('ownerEmail', user.email || '');
-      }
-
-      router.push('/owner/dashboard');
     } catch (error: any) {
         setError("Failed to sign in with Google. Please try again.");
         console.error("Google sign-in failed:", error);
@@ -120,18 +116,20 @@ export default function OwnerLoginPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <Button variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={loading || googleLoading}>
-               {googleLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image src="/google.svg" alt="Google icon" width={16} height={16} className="mr-2" />}
-              Sign in with Google
-            </Button>
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">
-                  Or continue with
-                </span>
+            <div className="space-y-4">
+              <Button variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={loading || googleLoading}>
+                 {googleLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image src="/google.svg" alt="Google icon" width={16} height={16} className="mr-2" />}
+                Sign in with Google
+              </Button>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">
+                    Or continue with
+                  </span>
+                </div>
               </div>
             </div>
             <form onSubmit={handleLogin} className="grid gap-4">

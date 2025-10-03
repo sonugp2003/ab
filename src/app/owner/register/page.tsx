@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
@@ -14,24 +14,33 @@ import { Home, Loader2 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
 import { auth, db, googleProvider } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, User } from 'firebase/auth';
+import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firestore';
 import { useUseCase } from '@/context/use-case-context';
 import Image from 'next/image';
 
 const formSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
+  name: z.string().min(1, "Full name is required"),
   email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  // Password is now optional because a Google user won't have one initially
+  password: z.string().min(6, "Password must be at least 6 characters").optional(),
   mobileNumber: z.string().length(10, "Mobile number must be 10 digits"),
   address: z.string().min(1, "Property address is required"),
   upiId: z.string().min(1, "UPI ID is required"),
+}).refine(data => {
+    // If there's no password, it's a Google sign-up flow, which is fine.
+    // If there is a password, it must meet the length requirement.
+    return data.password === undefined || data.password.length >= 6;
+}, {
+    message: "Password must be at least 6 characters",
+    path: ["password"],
 });
+
 
 export default function OwnerRegisterPage() {
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [isGoogleSignUp, setIsGoogleSignUp] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const { terminology } = useUseCase();
@@ -39,18 +48,36 @@ export default function OwnerRegisterPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      firstName: "",
-      lastName: "",
+      name: "",
       email: "",
-      password: "",
       mobileNumber: "",
       address: "",
       upiId: "",
     },
   });
 
-  const createOwnerDocument = async (uid: string, data: { name: string; email: string; mobileNumber?: string; address?: string; upiId?: string; }) => {
-     // Check if owner document already exists for this use case
+   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        if (currentUser) {
+            setUser(currentUser);
+            // Check if this is a redirect from Google Sign-In
+            const googleAuthUser = sessionStorage.getItem('google_auth_user');
+            if (googleAuthUser) {
+                const { displayName, email } = JSON.parse(googleAuthUser);
+                form.reset({
+                    name: displayName || '',
+                    email: email || '',
+                });
+                setIsGoogleSignUp(true);
+                // Clean up session storage
+                sessionStorage.removeItem('google_auth_user');
+            }
+        }
+    });
+    return () => unsubscribe();
+  }, [form]);
+
+  const createOwnerDocument = async (uid: string, data: z.infer<typeof formSchema>) => {
       const ownerQuery = query(collection(db, terminology.owner.collectionName), where('uid', '==', uid));
       const ownerSnapshot = await getDocs(ownerQuery);
 
@@ -67,248 +94,188 @@ export default function OwnerRegisterPage() {
         uid: uid,
         name: data.name,
         email: data.email,
-        mobileNumber: data.mobileNumber || "",
-        address: data.address || "",
-        upiId: data.upiId || "",
+        mobileNumber: data.mobileNumber,
+        address: data.address,
+        upiId: data.upiId,
         createdAt: serverTimestamp(),
       });
   }
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setLoading(true);
+    
+    // Case 1: User is already signed in with Google and is completing their profile
+    if (isGoogleSignUp && user) {
+        try {
+            await createOwnerDocument(user.uid, values);
+            toast({ title: "Registration Complete!", description: "Your account has been created." });
+            router.push('/owner/dashboard');
+        } catch (error: any) {
+             if (error.message !== 'account-exists') {
+                toast({ variant: "destructive", title: "Registration Failed", description: error.message });
+             }
+        } finally {
+            setLoading(false);
+        }
+        return;
+    }
+
+    // Case 2: Standard email/password sign-up
+    if (!values.password) {
+        form.setError("password", { message: "Password is required for email sign-up."});
+        setLoading(false);
+        return;
+    }
+
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
-      await createOwnerDocument(userCredential.user.uid, { 
-          name: `${values.firstName} ${values.lastName}`,
-          email: values.email,
-          mobileNumber: values.mobileNumber,
-          address: values.address,
-          upiId: values.upiId
-       });
+      await createOwnerDocument(userCredential.user.uid, values);
 
-      toast({
-        title: "Account Created Successfully",
-        description: "Redirecting to your dashboard...",
-      });
-
+      toast({ title: "Account Created Successfully", description: "Redirecting to your dashboard..." });
       router.push('/owner/dashboard');
 
     } catch (error: any) {
         if (error.code === 'auth/email-already-in-use') {
-            // This is OK. The user might be signing up for a different role.
-            // We just need to log them in to get their UID.
             try {
-                const existingUserCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
-                await createOwnerDocument(existingUserCredential.user.uid, { 
-                    name: `${values.firstName} ${values.lastName}`,
-                    email: values.email,
-                    mobileNumber: values.mobileNumber,
-                    address: values.address,
-                    upiId: values.upiId
-                 });
-                
-                toast({
-                    title: "Account Created Successfully",
-                    description: "Redirecting to your dashboard...",
-                });
-
-                router.push('/owner/dashboard');
-
+                // Try to sign them in to check if password is correct
+                await signInWithEmailAndPassword(auth, values.email, values.password!);
+                // If sign-in succeeds, it means they have an account but maybe not for this role
+                toast({ variant: "destructive", title: "Login Instead", description: "An account with this email already exists. Please log in."});
+                router.push('/owner/login');
             } catch (authError: any) {
-                if (authError.message === 'account-exists') {
-                    // This error is thrown from createOwnerDocument, do nothing extra.
-                } else if (authError.code === 'auth/wrong-password') {
-                     toast({
-                        variant: "destructive",
-                        title: "Registration Failed",
-                        description: "An account with this email already exists, but the password provided is incorrect.",
-                    });
+                if (authError.code === 'auth/wrong-password') {
+                     toast({ variant: "destructive", title: "Registration Failed", description: "An account with this email exists, but the password provided is incorrect." });
                 } else {
-                    console.error("Registration failed during login attempt:", authError);
-                    toast({
-                        variant: "destructive",
-                        title: "Registration Failed",
-                        description: authError.message || "An unexpected error occurred.",
-                    });
+                    toast({ variant: "destructive", title: "Registration Failed", description: authError.message || "An unexpected error occurred." });
                 }
             }
         } else {
-            console.error("Registration failed:", error);
-            toast({
-                variant: "destructive",
-                title: "Registration Failed",
-                description: error.message || "An unexpected error occurred.",
-            });
+            toast({ variant: "destructive", title: "Registration Failed", description: error.message || "An unexpected error occurred." });
         }
     } finally {
       setLoading(false);
     }
   };
-  
-  const handleGoogleSignUp = async () => {
-    setGoogleLoading(true);
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-       await createOwnerDocument(user.uid, {
-            name: user.displayName || 'New User',
-            email: user.email!,
-       });
-       
-       toast({
-        title: "Account Created Successfully",
-        description: "Welcome! Please complete your profile details.",
-      });
-
-       router.push('/owner/dashboard');
-
-    } catch (error: any) {
-      if (error.message !== 'account-exists') {
-        console.error("Google Sign-Up failed:", error);
-        toast({
-            variant: "destructive",
-            title: "Sign-Up Failed",
-            description: error.message || "An unexpected error occurred with Google Sign-Up.",
-        });
-      }
-    } finally {
-      setGoogleLoading(false);
-    }
-  }
-
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4">
       <Card className="mx-auto max-w-lg w-full shadow-lg">
         <CardHeader>
-          <CardTitle className="text-xl">{terminology.owner.title} Registration</CardTitle>
-          <CardDescription>Enter your information to create an account</CardDescription>
+          <CardTitle className="text-xl">{isGoogleSignUp ? 'Complete Your Profile' : `${terminology.owner.title} Registration`}</CardTitle>
+          <CardDescription>
+            {isGoogleSignUp ? 'Just a few more details and you\'ll be all set.' : 'Enter your information to create an account.'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="space-y-4">
-              <Button variant="outline" className="w-full" onClick={handleGoogleSignUp} disabled={loading || googleLoading}>
-                 {googleLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image src="/google.svg" alt="Google icon" width={16} height={16} className="mr-2" />}
-                Sign up with Google
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              {!isGoogleSignUp && (
+                <div className="space-y-4">
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-background px-2 text-muted-foreground">
+                        Sign up with email
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Max Robinson" {...field} disabled={loading || isGoogleSignUp} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="m@example.com" {...field} disabled={loading || isGoogleSignUp}/>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {!isGoogleSignUp && (
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Password</FormLabel>
+                        <FormControl>
+                          <Input type="password" {...field} disabled={loading}/>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+              )}
+               <FormField
+                control={form.control}
+                name="mobileNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Mobile Number</FormLabel>
+                    <FormControl>
+                      <Input placeholder="10-digit number" {...field} disabled={loading}/>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField
+                control={form.control}
+                name="address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{terminology.address.singular}</FormLabel>
+                    <FormControl>
+                      <Input placeholder={terminology.address.placeholder} {...field} disabled={loading}/>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField
+                control={form.control}
+                name="upiId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>UPI ID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="yourname@bank" {...field} disabled={loading}/>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? <Loader2 className="animate-spin" /> : (isGoogleSignUp ? 'Complete Registration' : 'Create an account')}
               </Button>
-               <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">
-                    Or continue with email
-                  </span>
-                </div>
-              </div>
+            </form>
+          </Form>
+          {!isGoogleSignUp && (
+            <div className="mt-4 text-center text-sm">
+                Already have an account?{' '}
+                <Link href="/owner/login" className="underline">
+                Sign in
+                </Link>
             </div>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="firstName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>First name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Max" {...field} disabled={loading || googleLoading} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="lastName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Last name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Robinson" {...field} disabled={loading || googleLoading} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input type="email" placeholder="m@example.com" {...field} disabled={loading || googleLoading}/>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input type="password" {...field} disabled={loading || googleLoading}/>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                  control={form.control}
-                  name="mobileNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Mobile Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="10-digit number" {...field} disabled={loading || googleLoading}/>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                  control={form.control}
-                  name="address"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{terminology.address.singular}</FormLabel>
-                      <FormControl>
-                        <Input placeholder={terminology.address.placeholder} {...field} disabled={loading || googleLoading}/>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                  control={form.control}
-                  name="upiId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>UPI ID</FormLabel>
-                      <FormControl>
-                        <Input placeholder="yourname@bank" {...field} disabled={loading || googleLoading}/>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" className="w-full" disabled={loading || googleLoading}>
-                  {loading ? <Loader2 className="animate-spin" /> : 'Create an account'}
-                </Button>
-              </form>
-            </Form>
-          </div>
-          <div className="mt-4 text-center text-sm">
-            Already have an account?{' '}
-            <Link href="/owner/login" className="underline">
-              Sign in
-            </Link>
-          </div>
+          )}
         </CardContent>
       </Card>
       <Link href="/" className="absolute top-4 left-4 z-10">
