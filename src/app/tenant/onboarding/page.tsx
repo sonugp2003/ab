@@ -21,7 +21,6 @@ const formSchema = z.object({
   roomCode: z.string().min(1, "This field is required"),
   fullName: z.string().min(1, "Full name is required"),
   email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
 export default function TenantOnboardingPage() {
@@ -37,7 +36,6 @@ export default function TenantOnboardingPage() {
       roomCode: "",
       fullName: "",
       email: "",
-      password: "",
     },
   });
 
@@ -86,7 +84,6 @@ export default function TenantOnboardingPage() {
         name: values.fullName,
         email: values.email,
         isRegistered: true,
-        // The password is not stored in this simplified version per prompt
       };
 
       await updateDoc(tenantDoc.ref, updatedData)
@@ -167,19 +164,6 @@ export default function TenantOnboardingPage() {
                     <FormLabel>Email</FormLabel>
                     <FormControl>
                       <Input type="email" placeholder="m@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Set a Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

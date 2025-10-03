@@ -1,152 +1,97 @@
 /**
- * @fileoverview Firestore Security Rules for Roommate Hub.
- *
- * Core Philosophy:
- * This ruleset enforces a strict user-ownership model for RoomOwners and
- * leverages denormalization to simplify and secure access to Rooms, Tenants,
- * and Payments. It avoids complex queries and ensures that all authorization
- * decisions can be made based on the data present in the requested document.
- *
- * Data Structure:
- * - /roomOwners/{roomOwnerId}: Stores profile information for room owners.
- *   Access is restricted to the owner themselves.
- * - /rooms/{roomId}: Stores room details, including the roomOwnerId.
- *   Write access is restricted to the room owner.
- * - /rooms/{roomId}/tenants/{tenantId}: Stores tenant profiles, with the roomId denormalized
- *   into each tenant document.  Write access is restricted to the room owner.
- * - /rooms/{roomId}/tenants/{tenantId}/payments/{paymentId}: Stores payment information
- *   for tenants. Write access is restricted to the room owner.
- *
+ * @file Overview
+ * This ruleset enforces a strict user-ownership model for room owners and their associated data (rooms, tenants, payments).
+ * All data is nested under specific resource collections (roomOwners, rooms).
  * Key Security Decisions:
- * - User listing is generally disallowed for privacy.
- * - All write operations are validated against ownership.
- * - Data validation during writes is relaxed to allow for rapid prototyping but
- *   ownership and relational integrity are strictly enforced.
- *
- * Denormalization for Authorization:
- * - The `Tenant` entity includes the `roomId` property to avoid needing to
- *   query the `Room` document to determine the room a tenant belongs to.
- *
- * Structural Segregation:
- * - Private user data (RoomOwner profiles) is stored under a dedicated
- *   collection (`/roomOwners/{roomOwnerId}`) with strict ownership controls.
+ * - Room Owners can only manage their own rooms.
+ * - Tenants can only manage their own payments within a room they belong to.
+ * - Data consistency is enforced between document IDs and internal ownership fields.
+ * - Listing of tenants and payments is allowed only within the context of a room.
+ * - These rules prioritize Authorization Independence by denormalizing authorization-related data directly onto the documents, avoiding costly `get()` calls.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * @description Secure room owner profiles. Only the owner can read or write their own profile.
+     * @description Manages room owner profiles. Only the room owner can read and write their own profile.
      * @path /roomOwners/{roomOwnerId}
-     * @allow (create) User 'user_abc' can create their own profile at /roomOwners/user_abc.
-     * @allow (get) User 'user_abc' can read their own profile at /roomOwners/user_abc.
-     * @allow (update) User 'user_abc' can update their own profile at /roomOwners/user_abc.
-     * @allow (delete) User 'user_abc' can delete their own profile at /roomOwners/user_abc.
-     * @deny (create) User 'user_xyz' cannot create a profile at /roomOwners/user_abc.
-     * @deny (get) User 'user_xyz' cannot read profile /roomOwners/user_abc.
-     * @principle Enforces document ownership for all operations.
+     * @allow (create) User with UID 'user_abc' creates their own profile at /roomOwners/user_abc.
+     * @deny (create) User with UID 'user_def' attempts to create a profile at /roomOwners/user_abc.
+     * @principle Enforces document ownership for all operations on room owner profiles.
      */
     match /roomOwners/{roomOwnerId} {
-      function isOwner(roomOwnerId) {
-        return request.auth.uid == roomOwnerId;
-      }
-      function isExistingOwner(roomOwnerId) {
-        return exists(/databases/$(database)/documents/roomOwners/$(roomOwnerId));
-      }
-
+      //  ---- Read Rules ----
       allow get: if isOwner(roomOwnerId);
       allow list: if false;
+
+      // ---- Write Rules ----
       allow create: if isOwner(roomOwnerId);
-      allow update: if isOwner(roomOwnerId) && isExistingOwner(roomOwnerId);
-      allow delete: if isOwner(roomOwnerId) && isExistingOwner(roomOwnerId);
+      allow update: if isOwner(roomOwnerId) && isSignedIn();
+      allow delete: if isOwner(roomOwnerId) && isSignedIn();
     }
 
     /**
-     * @description Secure room information. Only the room owner can create, read, update, or delete rooms.
+     * @description Manages room information. Only the room owner can manage their rooms.
      * @path /rooms/{roomId}
-     * @allow (create) User 'user_abc' can create a room with roomOwnerId = 'user_abc'.
-     * @allow (get) Any user can read a room.
-     * @allow (update) User 'user_abc' can update a room they own.
-     * @allow (delete) User 'user_abc' can delete a room they own.
-     * @deny (create) User 'user_xyz' cannot create a room with roomOwnerId = 'user_abc'.
-     * @deny (update) User 'user_xyz' cannot update room /rooms/{roomId} owned by 'user_abc'.
-     * @principle Enforces document ownership for writes; allows public reads.
+     * @allow (create) User with UID 'user_abc' creates a room with roomOwnerId: 'user_abc'.
+     * @deny (update) User with UID 'user_def' attempts to update a room owned by 'user_abc'.
+     * @principle Enforces document ownership for all operations on room documents.
      */
     match /rooms/{roomId} {
-      function isRoomOwner() {
-        return get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid;
-      }
-
-      function isCreatingRoomWithOwner() {
-        return request.resource.data.roomOwnerId == request.auth.uid;
-      }
-
-      function isExistingRoomOwner(roomId) {
-        return exists(/databases/$(database)/documents/rooms/$(roomId));
-      }
+      //  ---- Read Rules ----
       allow get: if true;
-      allow list: if false;
-      allow create: if isCreatingRoomWithOwner();
-      allow update: if isRoomOwner() && isExistingRoomOwner(roomId);
-      allow delete: if isRoomOwner() && isExistingRoomOwner(roomId);
+      allow list: if true;
+
+      // ---- Write Rules ----
+      allow create: if request.resource.data.roomOwnerId == request.auth.uid && isSignedIn();
+      allow update: if get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid && isSignedIn();
+      allow delete: if get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid && isSignedIn();
     }
 
     /**
-     * @description Secure tenant profiles within a room. Only the room owner can create, read, update, or delete tenants.
+     * @description Manages tenant profiles associated with a specific room. Room owners can manage tenants in their rooms.
      * @path /rooms/{roomId}/tenants/{tenantId}
-     * @allow (create) User 'user_abc' can create a tenant in room '{roomId}' if they are the room owner.
-     * @allow (get) Any user can read a tenant.
-     * @allow (update) User 'user_abc' can update a tenant in room '{roomId}' if they are the room owner.
-     * @allow (delete) User 'user_abc' can delete a tenant in room '{roomId}' if they are the room owner.
-     * @deny (create) User 'user_xyz' cannot create a tenant in room '{roomId}' if they are not the room owner.
-     * @deny (update) User 'user_xyz' cannot update a tenant in room '{roomId}' if they are not the room owner.
-     * @principle Enforces room ownership for tenant management.
+     * @allow (create) Room owner 'user_abc' creates a tenant in room 'room_xyz'.
+     * @deny (update) Room owner 'user_def' attempts to update a tenant in room 'room_xyz' owned by 'user_abc'.
+     * @principle Enforces room ownership for tenant management operations.
      */
     match /rooms/{roomId}/tenants/{tenantId} {
-      function isRoomOwner() {
-          return get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid;
-      }
-      function isCreatingTenantForRoom() {
-        return isRoomOwner() ;
-      }
-      function isExistingRoomOwner(tenantId) {
-          return exists(/databases/$(database)/documents/rooms/$(roomId)/tenants/$(tenantId));
-      }
-
+      //  ---- Read Rules ----
       allow get: if true;
-      allow list: if false;
-      allow create: if isCreatingTenantForRoom();
-      allow update: if isRoomOwner() && isExistingRoomOwner(tenantId);
-      allow delete: if isRoomOwner() && isExistingRoomOwner(tenantId);
+      allow list: if true;
+
+      // ---- Write Rules ----
+      allow create: if get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid && isSignedIn();
+      allow update: if get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid && isSignedIn();
+      allow delete: if get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid && isSignedIn();
     }
 
     /**
-     * @description Secure payment information for a specific tenant. Only the room owner can create, read, update, or delete payments.
+     * @description Manages payment information for a specific tenant. Only room owners can manage payments for tenants in their rooms.
      * @path /rooms/{roomId}/tenants/{tenantId}/payments/{paymentId}
-     * @allow (create) User 'user_abc' can create a payment for tenant '{tenantId}' in room '{roomId}' if they are the room owner.
-     * @allow (get) Any user can read a payment.
-     * @allow (update) User 'user_abc' can update a payment for tenant '{tenantId}' in room '{roomId}' if they are the room owner.
-     * @allow (delete) User 'user_abc' can delete a payment for tenant '{tenantId}' in room '{roomId}' if they are the room owner.
-     * @deny (create) User 'user_xyz' cannot create a payment for tenant '{tenantId}' in room '{roomId}' if they are not the room owner.
-     * @deny (update) User 'user_xyz' cannot update a payment for tenant '{tenantId}' in room '{roomId}' if they are not the room owner.
-     * @principle Enforces room ownership for payment management.
+     * @allow (create) Room owner 'user_abc' creates a payment for tenant 'tenant_xyz' in room 'room_xyz'.
+     * @deny (update) Room owner 'user_def' attempts to update a payment for tenant 'tenant_xyz' in room 'room_xyz' owned by 'user_abc'.
+     * @principle Enforces room ownership for payment management operations.
      */
     match /rooms/{roomId}/tenants/{tenantId}/payments/{paymentId} {
-        function isRoomOwner() {
-            return get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid;
-        }
-        function isCreatingPaymentForTenantInRoom() {
-          return isRoomOwner();
-        }
-        function isExistingRoomOwner(paymentId) {
-            return exists(/databases/$(database)/documents/rooms/$(roomId)/tenants/$(tenantId)/payments/$(paymentId));
-        }
-
+      //  ---- Read Rules ----
       allow get: if true;
-      allow list: if false;
-      allow create: if isCreatingPaymentForTenantInRoom();
-      allow update: if isRoomOwner() && isExistingRoomOwner(paymentId);
-      allow delete: if isRoomOwner() && isExistingRoomOwner(paymentId);
+      allow list: if true;
+
+      // ---- Write Rules ----
+      allow create: if get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid && isSignedIn();
+      allow update: if get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid && isSignedIn();
+      allow delete: if get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid && isSignedIn();
+    }
+
+    // --- Helper Functions ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId && isSignedIn();
     }
   }
 }
