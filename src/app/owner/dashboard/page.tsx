@@ -3,7 +3,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth, useFirestore, useUser } from '@/firebase';
+import { useAuth, useFirestore, useUser, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { User, signOut } from 'firebase/auth';
 import { collection, query, where, onSnapshot, getDocs, collectionGroup, doc, updateDoc, writeBatch, serverTimestamp, addDoc, documentId, getDoc, deleteDoc, Timestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
@@ -127,7 +127,11 @@ export default function OwnerDashboardPage() {
                     setMessages(unreadMessages.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)));
                 }, (error) => {
                     console.error("Error fetching messages: ", error);
-                    // Potentially show a toast to the user
+                    const permissionError = new FirestorePermissionError({
+                        path: 'messages',
+                        operation: 'list'
+                    });
+                    errorEmitter.emit('permission-error', permissionError);
                 });
                 setLoading(false);
                 return () => unsubscribeMessages();
@@ -135,13 +139,33 @@ export default function OwnerDashboardPage() {
                 setMessages([]);
                 setLoading(false);
             }
+        }, (error) => {
+            console.error("Error fetching tenants: ", error);
+            const permissionError = new FirestorePermissionError({
+                path: `${terminology.owner.collectionName}/${ownerDoc.id}/${terminology.tenant.collectionName}`,
+                operation: 'list'
+            });
+            errorEmitter.emit('permission-error', permissionError);
         });
 
         return () => unsubscribeTenants();
         } else {
         setLoading(false);
-        router.push('/owner/login');
+        // This could happen if the owner doc isn't created yet or rules deny access
+        // We'll emit an error to be caught and displayed.
+        const permissionError = new FirestorePermissionError({
+            path: `${terminology.owner.collectionName}/${user.uid}`,
+            operation: 'get'
+        });
+        errorEmitter.emit('permission-error', permissionError);
         }
+    }, (error) => {
+        console.error("Error fetching owner: ", error);
+        const permissionError = new FirestorePermissionError({
+            path: `${terminology.owner.collectionName}/${user.uid}`,
+            operation: 'get'
+        });
+        errorEmitter.emit('permission-error', permissionError);
     });
     
     return () => unsubscribeOwner();
@@ -846,3 +870,5 @@ export default function OwnerDashboardPage() {
     </motion.div>
   );
 }
+
+    
