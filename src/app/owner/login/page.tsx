@@ -9,17 +9,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Home, Loader2, AlertCircle } from 'lucide-react';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { auth, db } from '@/lib/firebase';
+import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
+import { auth, db, googleProvider } from '@/lib/firebase';
 import { useUseCase } from '@/context/use-case-context';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-
+import { Separator } from '@/components/ui/separator';
+import Image from 'next/image';
 
 export default function OwnerLoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { terminology } = useUseCase();
@@ -59,6 +61,47 @@ export default function OwnerLoginPage() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    setError(null);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+
+      const ownersRef = collection(db, terminology.owner.collectionName);
+      const q = query(ownersRef, where("uid", "==", user.uid));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        // This is a new Google Sign-In user, create a document for them.
+        // We need more info, so redirect them to a more complete registration form.
+        // For simplicity now, we can auto-create a document with partial info
+        // and let them update it later.
+        await addDoc(collection(db, terminology.owner.collectionName), {
+          uid: user.uid,
+          name: user.displayName || 'New User',
+          email: user.email,
+          mobileNumber: user.phoneNumber || '',
+          address: '', // Needs to be filled in later
+          upiId: '', // Needs to be filled in later
+          createdAt: serverTimestamp(),
+        });
+      }
+      
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('ownerEmail', user.email || '');
+      }
+
+      router.push('/owner/dashboard');
+    } catch (error: any) {
+        setError("Failed to sign in with Google. Please try again.");
+        console.error("Google sign-in failed:", error);
+    } finally {
+        setGoogleLoading(false);
+    }
+  };
+
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4">
       <Card className="mx-auto max-w-sm w-full">
@@ -69,15 +112,29 @@ export default function OwnerLoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin}>
-            <div className="grid gap-4">
-               {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Login Failed</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+          <div className="grid gap-4">
+             {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Login Failed</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            <Button variant="outline" className="w-full" onClick={handleGoogleSignIn} disabled={loading || googleLoading}>
+               {googleLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image src="/google.svg" alt="Google icon" width={16} height={16} className="mr-2" />}
+              Sign in with Google
+            </Button>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or continue with
+                </span>
+              </div>
+            </div>
+            <form onSubmit={handleLogin} className="grid gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -87,7 +144,7 @@ export default function OwnerLoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || googleLoading}
                 />
               </div>
               <div className="grid gap-2">
@@ -103,19 +160,20 @@ export default function OwnerLoginPage() {
                   required 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || googleLoading}
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || googleLoading}>
                 {loading ? <Loader2 className="animate-spin" /> : 'Login'}
               </Button>
-              <Button variant="outline" className="w-full" asChild>
-                  <Link href="/owner/register">
-                      Sign up
-                  </Link>
-              </Button>
-            </div>
-          </form>
+            </form>
+             <div className="text-center text-sm">
+                Don't have an account?{' '}
+                <Link href="/owner/register" className="underline">
+                    Sign up
+                </Link>
+             </div>
+          </div>
           <div className="mt-4 text-center text-sm">
             <Link href="/tenant/login" className="underline">
               Are you a {terminology.tenant.singular.toLowerCase()}? Login here

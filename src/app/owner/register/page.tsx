@@ -10,14 +10,14 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Home, Loader2 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
+import { auth, db, googleProvider } from '@/lib/firebase';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
+import Image from 'next/image';
 
 const formSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -31,6 +31,7 @@ const formSchema = z.object({
 
 export default function OwnerRegisterPage() {
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const { terminology } = useUseCase();
@@ -48,7 +49,7 @@ export default function OwnerRegisterPage() {
     },
   });
 
-  const createOwnerDocument = async (uid: string, values: z.infer<typeof formSchema>) => {
+  const createOwnerDocument = async (uid: string, data: { name: string; email: string; mobileNumber?: string; address?: string; upiId?: string; }) => {
      // Check if owner document already exists for this use case
       const ownerQuery = query(collection(db, terminology.owner.collectionName), where('uid', '==', uid));
       const ownerSnapshot = await getDocs(ownerQuery);
@@ -62,14 +63,13 @@ export default function OwnerRegisterPage() {
           throw new Error("account-exists");
       }
 
-
     await addDoc(collection(db, terminology.owner.collectionName), {
         uid: uid,
-        name: `${values.firstName} ${values.lastName}`,
-        email: values.email,
-        mobileNumber: values.mobileNumber,
-        address: values.address,
-        upiId: values.upiId,
+        name: data.name,
+        email: data.email,
+        mobileNumber: data.mobileNumber || "",
+        address: data.address || "",
+        upiId: data.upiId || "",
         createdAt: serverTimestamp(),
       });
   }
@@ -78,7 +78,13 @@ export default function OwnerRegisterPage() {
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
-      await createOwnerDocument(userCredential.user.uid, values);
+      await createOwnerDocument(userCredential.user.uid, { 
+          name: `${values.firstName} ${values.lastName}`,
+          email: values.email,
+          mobileNumber: values.mobileNumber,
+          address: values.address,
+          upiId: values.upiId
+       });
 
       toast({
         title: "Account Created Successfully",
@@ -93,7 +99,13 @@ export default function OwnerRegisterPage() {
             // We just need to log them in to get their UID.
             try {
                 const existingUserCredential = await signInWithEmailAndPassword(auth, values.email, values.password);
-                await createOwnerDocument(existingUserCredential.user.uid, values);
+                await createOwnerDocument(existingUserCredential.user.uid, { 
+                    name: `${values.firstName} ${values.lastName}`,
+                    email: values.email,
+                    mobileNumber: values.mobileNumber,
+                    address: values.address,
+                    upiId: values.upiId
+                 });
                 
                 toast({
                     title: "Account Created Successfully",
@@ -132,6 +144,38 @@ export default function OwnerRegisterPage() {
       setLoading(false);
     }
   };
+  
+  const handleGoogleSignUp = async () => {
+    setGoogleLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+       await createOwnerDocument(user.uid, {
+            name: user.displayName || 'New User',
+            email: user.email!,
+       });
+       
+       toast({
+        title: "Account Created Successfully",
+        description: "Welcome! Please complete your profile details.",
+      });
+
+       router.push('/owner/dashboard');
+
+    } catch (error: any) {
+      if (error.message !== 'account-exists') {
+        console.error("Google Sign-Up failed:", error);
+        toast({
+            variant: "destructive",
+            title: "Sign-Up Failed",
+            description: error.message || "An unexpected error occurred with Google Sign-Up.",
+        });
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  }
+
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4">
@@ -141,6 +185,21 @@ export default function OwnerRegisterPage() {
           <CardDescription>Enter your information to create an account</CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="space-y-4">
+            <Button variant="outline" className="w-full" onClick={handleGoogleSignUp} disabled={loading || googleLoading}>
+               {googleLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Image src="/google.svg" alt="Google icon" width={16} height={16} className="mr-2" />}
+              Sign up with Google
+            </Button>
+             <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or continue with email
+                </span>
+              </div>
+            </div>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -151,7 +210,7 @@ export default function OwnerRegisterPage() {
                     <FormItem>
                       <FormLabel>First name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Max" {...field} />
+                        <Input placeholder="Max" {...field} disabled={loading || googleLoading} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -164,7 +223,7 @@ export default function OwnerRegisterPage() {
                     <FormItem>
                       <FormLabel>Last name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Robinson" {...field} />
+                        <Input placeholder="Robinson" {...field} disabled={loading || googleLoading} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -178,7 +237,7 @@ export default function OwnerRegisterPage() {
                   <FormItem>
                     <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="m@example.com" {...field} />
+                      <Input type="email" placeholder="m@example.com" {...field} disabled={loading || googleLoading}/>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -191,7 +250,7 @@ export default function OwnerRegisterPage() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input type="password" {...field} />
+                      <Input type="password" {...field} disabled={loading || googleLoading}/>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -204,7 +263,7 @@ export default function OwnerRegisterPage() {
                   <FormItem>
                     <FormLabel>Mobile Number</FormLabel>
                     <FormControl>
-                      <Input placeholder="10-digit number" {...field} />
+                      <Input placeholder="10-digit number" {...field} disabled={loading || googleLoading}/>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -217,7 +276,7 @@ export default function OwnerRegisterPage() {
                   <FormItem>
                     <FormLabel>{terminology.address.singular}</FormLabel>
                     <FormControl>
-                      <Input placeholder={terminology.address.placeholder} {...field} />
+                      <Input placeholder={terminology.address.placeholder} {...field} disabled={loading || googleLoading}/>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -230,17 +289,18 @@ export default function OwnerRegisterPage() {
                   <FormItem>
                     <FormLabel>UPI ID</FormLabel>
                     <FormControl>
-                      <Input placeholder="yourname@bank" {...field} />
+                      <Input placeholder="yourname@bank" {...field} disabled={loading || googleLoading}/>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || googleLoading}>
                 {loading ? <Loader2 className="animate-spin" /> : 'Create an account'}
               </Button>
             </form>
           </Form>
+          </div>
           <div className="mt-4 text-center text-sm">
             Already have an account?{' '}
             <Link href="/owner/login" className="underline">
