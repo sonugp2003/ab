@@ -52,6 +52,7 @@ export default function OwnerRegisterPage() {
     defaultValues: {
       name: "",
       email: "",
+      password: "",
       mobileNumber: "",
       address: "",
       upiId: "",
@@ -283,5 +284,3 @@ export default function OwnerRegisterPage() {
     </div>
   );
 }
-
-    
