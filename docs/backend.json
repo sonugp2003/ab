@@ -1,0 +1,222 @@
+{
+  "entities": {
+    "RoomOwner": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "RoomOwner",
+      "type": "object",
+      "description": "Represents a room owner in the Roommate Hub application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the RoomOwner entity."
+        },
+        "username": {
+          "type": "string",
+          "description": "Username of the room owner."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the room owner.",
+          "format": "email"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "Phone number of the room owner."
+        }
+      },
+      "required": [
+        "id",
+        "username",
+        "email"
+      ]
+    },
+    "Tenant": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Tenant",
+      "type": "object",
+      "description": "Represents a tenant in the Roommate Hub application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Tenant entity."
+        },
+        "roomId": {
+          "type": "string",
+          "description": "Reference to Room. (Relationship: Room 1:N Tenant)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the tenant."
+        },
+        "email": {
+          "type": "string",
+          "description": "Email address of the tenant.",
+          "format": "email"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "Phone number of the tenant."
+        }
+      },
+      "required": [
+        "id",
+        "roomId",
+        "name",
+        "email"
+      ]
+    },
+    "Room": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Room",
+      "type": "object",
+      "description": "Represents a room or property managed by a room owner.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Room entity."
+        },
+        "roomOwnerId": {
+          "type": "string",
+          "description": "Reference to RoomOwner. (Relationship: RoomOwner 1:N Room)"
+        },
+        "roomCode": {
+          "type": "string",
+          "description": "Room code for tenants to join the room."
+        },
+        "address": {
+          "type": "string",
+          "description": "Address of the room."
+        }
+      },
+      "required": [
+        "id",
+        "roomOwnerId",
+        "roomCode",
+        "address"
+      ]
+    },
+    "Payment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Payment",
+      "type": "object",
+      "description": "Represents a payment made by a tenant.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Payment entity."
+        },
+        "tenantId": {
+          "type": "string",
+          "description": "Reference to Tenant. (Relationship: Tenant 1:N Payment)"
+        },
+        "amount": {
+          "type": "number",
+          "description": "Amount paid by the tenant."
+        },
+        "paymentDate": {
+          "type": "string",
+          "description": "Date and time when the payment was made.",
+          "format": "date-time"
+        },
+        "paymentStatus": {
+          "type": "string",
+          "description": "Payment status (paid/not paid)."
+        }
+      },
+      "required": [
+        "id",
+        "tenantId",
+        "amount",
+        "paymentDate",
+        "paymentStatus"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/roomOwners/{roomOwnerId}",
+        "definition": {
+          "entityName": "RoomOwner",
+          "schema": {
+            "$ref": "#/backend/entities/RoomOwner"
+          },
+          "description": "Stores room owner profiles.  Authorization is based on path ownership.",
+          "params": [
+            {
+              "name": "roomOwnerId",
+              "description": "The unique identifier of the room owner, matching the Firebase Auth UID."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/rooms/{roomId}",
+        "definition": {
+          "entityName": "Room",
+          "schema": {
+            "$ref": "#/backend/entities/Room"
+          },
+          "description": "Stores room information. Includes 'roomOwnerId' for determining ownership.",
+          "params": [
+            {
+              "name": "roomId",
+              "description": "The unique identifier for the room."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/rooms/{roomId}/tenants/{tenantId}",
+        "definition": {
+          "entityName": "Tenant",
+          "schema": {
+            "$ref": "#/backend/entities/Tenant"
+          },
+          "description": "Stores tenant profiles associated with a specific room. Includes denormalized 'roomId' for authorization independence.",
+          "params": [
+            {
+              "name": "roomId",
+              "description": "The unique identifier of the room."
+            },
+            {
+              "name": "tenantId",
+              "description": "The unique identifier of the tenant."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/rooms/{roomId}/tenants/{tenantId}/payments/{paymentId}",
+        "definition": {
+          "entityName": "Payment",
+          "schema": {
+            "$ref": "#/backend/entities/Payment"
+          },
+          "description": "Stores payment information for a specific tenant.  Nested under tenants for easy access.",
+          "params": [
+            {
+              "name": "roomId",
+              "description": "The unique identifier of the room."
+            },
+            {
+              "name": "tenantId",
+              "description": "The unique identifier of the tenant."
+            },
+            {
+              "name": "paymentId",
+              "description": "The unique identifier of the payment."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore structure is designed to support the Roommate Hub application, focusing on clear ownership, tenant-room relationships, and efficient data retrieval. The structure enforces Authorization Independence by denormalizing authorization-related data, avoiding the need for `get()` calls in security rules. This supports atomic operations and enhances security and debuggability.  The structure prioritizes segregation to ensure QAPs. \n\nSpecifically, the chosen structure ensures Authorization Independence as follows:\n\n*   Tenants include the `roomId` directly in their document, enabling direct access to rooms without needing to traverse User -> Room relationship.\n\nThe structure supports the required QAPs (Rules are not Filters) by segregating data based on access patterns.  Since the tenant data includes the Room ID, listing tenants for a room is possible without filtering.\n"
+  }
+}

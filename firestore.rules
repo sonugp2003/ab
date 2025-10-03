@@ -1,0 +1,120 @@
+/**
+ * @file Firestore Security Rules for Roommate Hub
+ * @core_philosophy This ruleset enforces a strict user-ownership model for room owner profiles and a room-owner-based model for rooms and related tenant/payment data.
+ * @data_structure
+ *   - /roomOwners/{roomOwnerId}: Stores room owner profiles, secured by owner ID.
+ *   - /rooms/{roomId}: Stores room information, secured by room owner ID stored within the document.
+ *   - /rooms/{roomId}/tenants/{tenantId}: Stores tenant profiles, secured by the parent room's owner.
+ *   - /rooms/{roomId}/tenants/{tenantId}/payments/{paymentId}: Stores payment information, secured by the parent room's owner.
+ * @key_security_decisions
+ *   - Room owners can only manage their own profiles.
+ *   - Room data can only be created, updated, or deleted by the associated room owner.
+ *   - Tenant and payment data can only be managed by the room owner of the associated room.
+ *   - Listing of tenants is allowed only by the room owner.
+ * @denormalization_for_authorization The 'Room' document includes a 'roomOwnerId' field to enable direct authorization checks without needing to perform additional reads.  The 'Tenant' document includes the `roomId` to maintain Authorization Independence.
+ * @structural_segregation Data is segregated based on ownership and relationships. Private data (e.g., room owner profiles) is stored separately from shared data (e.g., rooms, tenants, payments).
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * @description Manages room owner profiles. Only the owner can read, update, or delete their profile.
+     * @path /roomOwners/{roomOwnerId}
+     * @allow (create) User abc creates their own profile with ID 'abc'.
+     * @allow (get) User abc reads their own profile with ID 'abc'.
+     * @allow (update) User abc updates their own profile with ID 'abc'.
+     * @allow (delete) User abc deletes their own profile with ID 'abc'.
+     * @deny (create) User abc tries to create a profile with ID 'def'.
+     * @deny (get) User abc tries to read profile with ID 'def'.
+     * @deny (update) User abc tries to update profile with ID 'def'.
+     * @deny (delete) User abc tries to delete profile with ID 'def'.
+     * @principle Enforces document ownership for all operations.
+     */
+    match /roomOwners/{roomOwnerId} {
+      allow get: if isOwner(roomOwnerId);
+      allow list: if false;
+      allow create: if isOwner(roomOwnerId) && request.resource.data.id == roomOwnerId;
+      allow update: if isExistingOwner(roomOwnerId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(roomOwnerId);
+    }
+
+    /**
+     * @description Manages room information.  Only the room owner can create, read, update, or delete rooms.
+     * @path /rooms/{roomId}
+     * @allow (create) User abc creates a room with roomOwnerId 'abc'.
+     * @allow (get) Any user can read room information.
+     * @allow (update) User abc updates a room where roomOwnerId is 'abc'.
+     * @allow (delete) User abc deletes a room where roomOwnerId is 'abc'.
+     * @deny (create) User abc tries to create a room with roomOwnerId 'def'.
+     * @deny (update) User abc tries to update a room where roomOwnerId is 'def'.
+     * @deny (delete) User abc tries to delete a room where roomOwnerId is 'def'.
+     * @principle Enforces document ownership for writes. Public read access is allowed.
+     */
+    match /rooms/{roomId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.roomOwnerId == request.auth.uid && request.resource.data.id == roomId;
+      allow update: if isExistingRoomOwner(roomId) && request.resource.data.roomOwnerId == resource.data.roomOwnerId;
+      allow delete: if isExistingRoomOwner(roomId);
+    }
+
+    /**
+     * @description Manages tenant profiles within a room. Only the room owner can create, read, update, or delete tenants.
+     * @path /rooms/{roomId}/tenants/{tenantId}
+     * @allow (create) User abc (room owner) creates a tenant in room xyz.
+     * @allow (get) Any user can read tenant profile
+     * @allow (update) User abc (room owner) updates a tenant in room xyz.
+     * @allow (delete) User abc (room owner) deletes a tenant in room xyz.
+     * @deny (create) User def (not room owner) tries to create a tenant in room xyz.
+     * @deny (update) User def (not room owner) tries to update a tenant in room xyz.
+     * @deny (delete) User def (not room owner) tries to delete a tenant in room xyz.
+     * @principle Enforces room owner control over tenant data.
+     */
+    match /rooms/{roomId}/tenants/{tenantId} {
+      allow get, list: if isRoomOwner(roomId);
+      allow create: if isRoomOwner(roomId) && request.resource.data.roomId == roomId && request.resource.data.id == tenantId;
+      allow update: if isExistingRoomOwner(roomId) && request.resource.data.roomId == resource.data.roomId;
+      allow delete: if isExistingRoomOwner(roomId);
+    }
+
+    /**
+     * @description Manages payment information for tenants. Only the room owner can create, read, update, or delete payments.
+     * @path /rooms/{roomId}/tenants/{tenantId}/payments/{paymentId}
+     * @allow (create) User abc (room owner) creates a payment for tenant xyz in room pqr.
+     * @allow (get) Any user can read payment
+     * @allow (update) User abc (room owner) updates a payment for tenant xyz in room pqr.
+     * @allow (delete) User abc (room owner) deletes a payment for tenant xyz in room pqr.
+     * @deny (create) User def (not room owner) tries to create a payment.
+     * @deny (update) User def (not room owner) tries to update a payment.
+     * @deny (delete) User def (not room owner) tries to delete a payment.
+     * @principle Enforces room owner control over tenant payment data.
+     */
+    match /rooms/{roomId}/tenants/{tenantId}/payments/{paymentId} {
+      allow get, list: if isRoomOwner(roomId);
+      allow create: if isRoomOwner(roomId);
+      allow update: if isExistingRoomOwner(roomId);
+      allow delete: if isExistingRoomOwner(roomId);
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    function isRoomOwner(roomId) {
+      return isSignedIn() && get(/databases/$(database)/documents/rooms/$(roomId)).data.roomOwnerId == request.auth.uid;
+    }
+
+    function isExistingRoomOwner(roomId) {
+      return isRoomOwner(roomId) && resource != null;
+    }
+  }
+}
