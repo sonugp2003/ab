@@ -13,11 +13,12 @@ import { Input } from '@/components/ui/input';
 import { Home, Loader2 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db, googleProvider } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, query, where, getDocs, setDoc } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
 import Image from 'next/image';
+import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 const formSchema = z.object({
   name: z.string().min(1, "Full name is required"),
@@ -90,7 +91,9 @@ export default function OwnerRegisterPage() {
           throw new Error("account-exists");
       }
 
-    await addDoc(collection(db, terminology.owner.collectionName), {
+      const docRef = doc(db, terminology.owner.collectionName, uid);
+      
+      setDocumentNonBlocking(docRef, {
         uid: uid,
         name: data.name,
         email: data.email,
@@ -98,7 +101,7 @@ export default function OwnerRegisterPage() {
         address: data.address,
         upiId: data.upiId,
         createdAt: serverTimestamp(),
-      });
+      }, {});
   }
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
@@ -136,19 +139,7 @@ export default function OwnerRegisterPage() {
 
     } catch (error: any) {
         if (error.code === 'auth/email-already-in-use') {
-            try {
-                // Try to sign them in to check if password is correct
-                await signInWithEmailAndPassword(auth, values.email, values.password!);
-                // If sign-in succeeds, it means they have an account but maybe not for this role
-                toast({ variant: "destructive", title: "Login Instead", description: "An account with this email already exists. Please log in."});
-                router.push('/owner/login');
-            } catch (authError: any) {
-                if (authError.code === 'auth/wrong-password') {
-                     toast({ variant: "destructive", title: "Registration Failed", description: "An account with this email exists, but the password provided is incorrect." });
-                } else {
-                    toast({ variant: "destructive", title: "Registration Failed", description: authError.message || "An unexpected error occurred." });
-                }
-            }
+             toast({ variant: "destructive", title: "Registration Failed", description: "An account with this email already exists." });
         } else {
             toast({ variant: "destructive", title: "Registration Failed", description: error.message || "An unexpected error occurred." });
         }
