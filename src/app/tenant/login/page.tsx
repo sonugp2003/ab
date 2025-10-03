@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Home, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { collection, query, where, getDocs, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
 
@@ -20,6 +20,7 @@ export default function TenantLoginPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { terminology } = useUseCase();
+  const db = useFirestore();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

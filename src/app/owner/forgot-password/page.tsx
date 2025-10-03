@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Home, Loader2, Mail, CheckCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase';
+import { useAuth } from '@/firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -23,6 +23,7 @@ export default function ForgotPasswordPage() {
     const [loading, setLoading] = useState(false);
     const [emailSent, setEmailSent] = useState(false);
     const { toast } = useToast();
+    const auth = useAuth();
 
     const form = useForm<z.infer<typeof emailSchema>>({
         resolver: zodResolver(emailSchema),

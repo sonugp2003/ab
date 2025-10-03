@@ -19,7 +19,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { doc, collection, addDoc, writeBatch, serverTimestamp, updateDoc } from 'firebase/firestore';
 import type { Tenant } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -44,6 +44,7 @@ export function RecordPaymentDialog({ isOpen, setIsOpen, tenant, ownerId, prefil
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { terminology } = useUseCase();
+  const db = useFirestore();
 
   const totalDue = tenant.rentAmount + (tenant.extraExpenses || 0);
   const balance = totalDue - tenant.amountPaid;

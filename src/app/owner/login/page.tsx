@@ -9,8 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Home, Loader2, AlertCircle } from 'lucide-react';
-import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
-import { auth, db, googleProvider } from '@/lib/firebase';
+import { signInWithEmailAndPassword, signInWithPopup, signOut, GoogleAuthProvider } from 'firebase/auth';
+import { useAuth, useFirestore } from '@/firebase';
 import { useUseCase } from '@/context/use-case-context';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -24,6 +24,8 @@ export default function OwnerLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { terminology } = useUseCase();
+  const auth = useAuth();
+  const db = useFirestore();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +66,7 @@ export default function OwnerLoginPage() {
     setGoogleLoading(true);
     setError(null);
     try {
+      const googleProvider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
 

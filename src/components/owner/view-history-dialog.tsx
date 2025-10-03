@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import type { Tenant, Payment } from '@/lib/types';
 import { Skeleton } from '../ui/skeleton';
@@ -29,6 +29,7 @@ export function ViewHistoryDialog({ isOpen, setIsOpen, tenant, ownerId }: ViewHi
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { terminology } = useUseCase();
+  const db = useFirestore();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -51,7 +52,7 @@ export function ViewHistoryDialog({ isOpen, setIsOpen, tenant, ownerId }: ViewHi
     });
 
     return () => unsubscribe();
-  }, [isOpen, ownerId, tenant.id, toast, terminology]);
+  }, [isOpen, ownerId, tenant.id, toast, terminology, db]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(amount);

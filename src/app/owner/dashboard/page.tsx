@@ -3,8 +3,8 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, db } from '@/lib/firebase';
-import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { useAuth, useFirestore, useUser } from '@/firebase';
+import { User, signOut } from 'firebase/auth';
 import { collection, query, where, onSnapshot, getDocs, collectionGroup, doc, updateDoc, writeBatch, serverTimestamp, addDoc, documentId, getDoc, deleteDoc, Timestamp } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -43,7 +43,9 @@ export default function OwnerDashboardPage() {
   const { setTheme, theme } = useTheme();
   const { toast } = useToast();
   const { terminology, setUseCase } = useUseCase();
-  const [user, setUser] = useState<User | null>(null);
+  const auth = useAuth();
+  const db = useFirestore();
+  const { user } = useUser();
   const [owner, setOwner] = useState<Owner | null>(null);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -85,68 +87,65 @@ export default function OwnerDashboardPage() {
 
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setUser(user);
-        const ownerQuery = query(collection(db, terminology.owner.collectionName), where('uid', '==', user.uid));
-        const unsubscribeOwner = onSnapshot(ownerQuery, (snapshot) => {
-          if (!snapshot.empty) {
-            const ownerDoc = snapshot.docs[0];
-            const ownerData = { id: ownerDoc.id, ...ownerDoc.data() } as Owner;
-            setOwner(ownerData);
-            if (typeof window !== 'undefined') {
-                localStorage.setItem('ownerEmail', user.email || '');
-            }
+    if (!user) {
+        if (!loading) router.push('/owner/login');
+        return;
+    }
+    
+    const ownerQuery = query(collection(db, terminology.owner.collectionName), where('uid', '==', user.uid));
+    const unsubscribeOwner = onSnapshot(ownerQuery, (snapshot) => {
+        if (!snapshot.empty) {
+        const ownerDoc = snapshot.docs[0];
+        const ownerData = { id: ownerDoc.id, ...ownerDoc.data() } as Owner;
+        setOwner(ownerData);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('ownerEmail', user.email || '');
+        }
 
-            // Setup tenants listener
-            const tenantsQuery = query(collection(db, `${terminology.owner.collectionName}/${ownerDoc.id}/${terminology.tenant.collectionName}`));
-            const unsubscribeTenants = onSnapshot(tenantsQuery, (tenantsSnapshot) => {
-              const tenantsData = tenantsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Tenant));
-              setTenants(tenantsData);
+        // Setup tenants listener
+        const tenantsQuery = query(collection(db, `${terminology.owner.collectionName}/${ownerDoc.id}/${terminology.tenant.collectionName}`));
+        const unsubscribeTenants = onSnapshot(tenantsQuery, (tenantsSnapshot) => {
+            const tenantsData = tenantsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Tenant));
+            setTenants(tenantsData);
 
-                // Setup messages listener once we have tenants
-                if (tenantsData.length > 0) {
-                    const messagesQuery = collectionGroup(db, 'messages');
-                    const unsubscribeMessages = onSnapshot(messagesQuery, (messagesSnapshot) => {
-                        const ownerTenantIds = new Set(tenantsData.map(t => t.id));
-                        const unreadMessages: Message[] = [];
-                        messagesSnapshot.forEach(msgDoc => {
-                            const tenantRef = msgDoc.ref.parent.parent;
-                            if (tenantRef && ownerTenantIds.has(tenantRef.id)) {
-                                 const msgData = { id: msgDoc.id, tenantId: tenantRef.id, ...msgDoc.data() } as Message & {tenantId: string};
-                                 if (msgData.status === 'unread') {
-                                    unreadMessages.push(msgData);
-                                 }
-                            }
-                        });
-                         // Client-side sort
-                        setMessages(unreadMessages.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)));
-                    }, (error) => {
-                        console.error("Error fetching messages: ", error);
-                        // Potentially show a toast to the user
+            // Setup messages listener once we have tenants
+            if (tenantsData.length > 0) {
+                const messagesQuery = collectionGroup(db, 'messages');
+                const unsubscribeMessages = onSnapshot(messagesQuery, (messagesSnapshot) => {
+                    const ownerTenantIds = new Set(tenantsData.map(t => t.id));
+                    const unreadMessages: Message[] = [];
+                    messagesSnapshot.forEach(msgDoc => {
+                        const tenantRef = msgDoc.ref.parent.parent;
+                        if (tenantRef && ownerTenantIds.has(tenantRef.id)) {
+                                const msgData = { id: msgDoc.id, tenantId: tenantRef.id, ...msgDoc.data() } as Message & {tenantId: string};
+                                if (msgData.status === 'unread') {
+                                unreadMessages.push(msgData);
+                                }
+                        }
                     });
-                    setLoading(false);
-                    return () => unsubscribeMessages();
-                } else {
-                    setMessages([]);
-                    setLoading(false);
-                }
-            });
-
-            return () => unsubscribeTenants();
-          } else {
-            setLoading(false);
-            router.push('/owner/login');
-          }
+                        // Client-side sort
+                    setMessages(unreadMessages.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)));
+                }, (error) => {
+                    console.error("Error fetching messages: ", error);
+                    // Potentially show a toast to the user
+                });
+                setLoading(false);
+                return () => unsubscribeMessages();
+            } else {
+                setMessages([]);
+                setLoading(false);
+            }
         });
-         return () => unsubscribeOwner();
-      } else {
+
+        return () => unsubscribeTenants();
+        } else {
+        setLoading(false);
         router.push('/owner/login');
-      }
+        }
     });
     
-    return () => unsubscribeAuth();
-  }, [router, terminology]);
+    return () => unsubscribeOwner();
+  }, [user, router, terminology, db, loading]);
 
 
   const handleLogout = async () => {

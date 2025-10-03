@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Loader2, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { doc, deleteDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 import type { Tenant } from '@/lib/types';
 import { useUseCase } from '@/context/use-case-context';
@@ -28,7 +28,7 @@ interface DeleteTenantDialogProps {
 }
 
 // Helper function to delete all documents in a subcollection
-async function deleteSubcollection(collectionPath: string) {
+async function deleteSubcollection(collectionPath: string, db: any) {
     const collectionRef = collection(db, collectionPath);
     const querySnapshot = await getDocs(collectionRef);
     const batch = writeBatch(db);
@@ -43,6 +43,7 @@ export function DeleteTenantDialog({ isOpen, setIsOpen, tenant, ownerId }: Delet
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { terminology } = useUseCase();
+  const db = useFirestore();
 
   const handleDelete = async () => {
     setLoading(true);
@@ -51,8 +52,8 @@ export function DeleteTenantDialog({ isOpen, setIsOpen, tenant, ownerId }: Delet
         const tenantRef = doc(db, tenantPath);
         
         // Delete subcollections first
-        await deleteSubcollection(`${tenantPath}/payments`);
-        await deleteSubcollection(`${tenantPath}/messages`);
+        await deleteSubcollection(`${tenantPath}/payments`, db);
+        await deleteSubcollection(`${tenantPath}/messages`, db);
         
         // Delete the tenant document
         await deleteDoc(tenantRef);

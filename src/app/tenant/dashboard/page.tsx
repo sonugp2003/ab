@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { doc, onSnapshot, collection, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +29,7 @@ export default function TenantDashboardPage() {
   const { setTheme, theme } = useTheme();
   const { toast } = useToast();
   const { terminology, setUseCase } = useUseCase();
+  const db = useFirestore();
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [owner, setOwner] = useState<Owner | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -111,7 +112,7 @@ export default function TenantDashboardPage() {
     return () => {
         if(unsubscribeTenant) unsubscribeTenant();
     }
-  }, [router]);
+  }, [router, db]);
   
   useEffect(() => {
      if(tenant && owner) {

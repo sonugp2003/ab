@@ -18,7 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import type { Message } from '@/lib/types';
 import { useUseCase } from '@/context/use-case-context';
@@ -38,6 +38,7 @@ export function RejectPaymentDialog({ isOpen, setIsOpen, message, ownerId }: Rej
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { terminology } = useUseCase();
+  const db = useFirestore();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),

@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
 import { ToasterProvider } from "@/hooks/use-toast";
 import { UseCaseProvider } from "@/context/use-case-context";
+import { FirebaseClientProvider } from "@/firebase";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -29,19 +30,21 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.className} safe-area`}>
-        <UseCaseProvider>
-          <ToasterProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
-              {children}
-              <Toaster />
-            </ThemeProvider>
-          </ToasterProvider>
-        </UseCaseProvider>
+        <FirebaseClientProvider>
+          <UseCaseProvider>
+            <ToasterProvider>
+              <ThemeProvider
+                attribute="class"
+                defaultTheme="system"
+                enableSystem
+                disableTransitionOnChange
+              >
+                {children}
+                <Toaster />
+              </ThemeProvider>
+            </ToasterProvider>
+          </UseCaseProvider>
+        </FirebaseClientProvider>
       </body>
     </html>
   );

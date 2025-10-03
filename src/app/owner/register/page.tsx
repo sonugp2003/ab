@@ -13,12 +13,11 @@ import { Input } from '@/components/ui/input';
 import { Home, Loader2 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, serverTimestamp, query, where, getDocs, setDoc } from 'firebase/firestore';
+import { useAuth, useFirestore, useUser, setDocumentNonBlocking } from '@/firebase';
+import { createUserWithEmailAndPassword, User } from 'firebase/auth';
+import { collection, doc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
 import Image from 'next/image';
-import { setDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 
 const formSchema = z.object({
   name: z.string().min(1, "Full name is required"),
@@ -40,7 +39,9 @@ const formSchema = z.object({
 
 export default function OwnerRegisterPage() {
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const { user } = useUser();
+  const auth = useAuth();
+  const db = useFirestore();
   const [isGoogleSignUp, setIsGoogleSignUp] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
@@ -58,9 +59,7 @@ export default function OwnerRegisterPage() {
   });
 
    useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        if (currentUser) {
-            setUser(currentUser);
+        if (user) {
             // Check if this is a redirect from Google Sign-In
             const googleAuthUser = sessionStorage.getItem('google_auth_user');
             if (googleAuthUser) {
@@ -74,9 +73,7 @@ export default function OwnerRegisterPage() {
                 sessionStorage.removeItem('google_auth_user');
             }
         }
-    });
-    return () => unsubscribe();
-  }, [form]);
+  }, [user, form]);
 
   const createOwnerDocument = async (uid: string, data: z.infer<typeof formSchema>) => {
       const ownerQuery = query(collection(db, terminology.owner.collectionName), where('uid', '==', uid));

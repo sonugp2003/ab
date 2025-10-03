@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Home, Loader2 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { collection, query, where, getDocs, updateDoc, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
 
@@ -29,6 +29,7 @@ export default function TenantOnboardingPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { terminology } = useUseCase();
+  const db = useFirestore();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),

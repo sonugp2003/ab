@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { PlusCircle, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
 
@@ -49,6 +49,7 @@ export function AddTenantDialog({ ownerId }: AddTenantDialogProps) {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { terminology } = useUseCase();
+  const db = useFirestore();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -188,4 +189,3 @@ export function AddTenantDialog({ ownerId }: AddTenantDialogProps) {
     </Dialog>
   );
 }
-

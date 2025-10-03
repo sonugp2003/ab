@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Loader2, Calendar as CalendarIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { useFirestore } from '@/firebase';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import type { Tenant } from '@/lib/types';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -49,6 +49,7 @@ export function EditTenantDialog({ isOpen, setIsOpen, tenant, ownerId }: EditTen
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { terminology } = useUseCase();
+  const db = useFirestore();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),

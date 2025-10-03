@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Home, Loader2, KeyRound, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase';
+import { useAuth } from '@/firebase';
 import { confirmPasswordReset, verifyPasswordResetCode } from 'firebase/auth';
 
 const formSchema = z.object({
@@ -30,6 +30,7 @@ function ResetPasswordComponent() {
   const [error, setError] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const { toast } = useToast();
+  const auth = useAuth();
   
   const oobCode = searchParams.get('oobCode');
 
@@ -50,7 +51,7 @@ function ResetPasswordComponent() {
       }
     };
     verifyCode();
-  }, [oobCode]);
+  }, [oobCode, auth]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
