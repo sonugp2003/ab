@@ -13,9 +13,9 @@ import { Input } from '@/components/ui/input';
 import { Home, Loader2 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth, useFirestore, useUser, setDocumentNonBlocking } from '@/firebase';
+import { useAuth, useFirestore, useUser, setDocumentNonBlocking, FirestorePermissionError, errorEmitter } from '@/firebase';
 import { createUserWithEmailAndPassword, User } from 'firebase/auth';
-import { collection, doc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, query, where, getDocs, setDoc } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
 import Image from 'next/image';
 
@@ -75,22 +75,9 @@ export default function OwnerRegisterPage() {
         }
   }, [user, form]);
 
-  const createOwnerDocument = async (uid: string, data: z.infer<typeof formSchema>) => {
-      const ownerQuery = query(collection(db, terminology.owner.collectionName), where('uid', '==', uid));
-      const ownerSnapshot = await getDocs(ownerQuery);
-
-      if (!ownerSnapshot.empty) {
-          toast({
-              variant: "destructive",
-              title: "Account Already Exists",
-              description: `You already have a ${terminology.owner.singular.toLowerCase()} account. Please log in.`,
-          });
-          throw new Error("account-exists");
-      }
-
+  const createOwnerDocument = (uid: string, data: z.infer<typeof formSchema>) => {
       const docRef = doc(db, terminology.owner.collectionName, uid);
-      
-      setDocumentNonBlocking(docRef, {
+      const ownerData = {
         uid: uid,
         name: data.name,
         email: data.email,
@@ -98,7 +85,20 @@ export default function OwnerRegisterPage() {
         address: data.address,
         upiId: data.upiId,
         createdAt: serverTimestamp(),
-      }, {});
+      };
+      
+      // Use setDoc and chain a .catch for contextual error handling
+      return setDoc(docRef, ownerData)
+        .catch(serverError => {
+            const permissionError = new FirestorePermissionError({
+                path: docRef.path,
+                operation: 'create',
+                requestResourceData: ownerData,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+            // We throw the original serverError to be caught by the onSubmit handler's catch block
+            throw serverError;
+        });
   }
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
@@ -107,12 +107,20 @@ export default function OwnerRegisterPage() {
     // Case 1: User is already signed in with Google and is completing their profile
     if (isGoogleSignUp && user) {
         try {
+            const ownerQuery = query(collection(db, terminology.owner.collectionName), where('uid', '==', user.uid));
+            const ownerSnapshot = await getDocs(ownerQuery);
+            if (!ownerSnapshot.empty) {
+                toast({ variant: "destructive", title: "Account Already Exists", description: `You already have a ${terminology.owner.singular.toLowerCase()} account. Please log in.`});
+                throw new Error("account-exists");
+            }
+
             await createOwnerDocument(user.uid, values);
             toast({ title: "Registration Complete!", description: "Your account has been created." });
             router.push('/owner/dashboard');
         } catch (error: any) {
              if (error.message !== 'account-exists') {
-                toast({ variant: "destructive", title: "Registration Failed", description: error.message });
+                // The contextual error is already emitted, so we just show a generic toast here.
+                toast({ variant: "destructive", title: "Registration Failed", description: "Could not create your account due to a database error." });
              }
         } finally {
             setLoading(false);
@@ -138,7 +146,8 @@ export default function OwnerRegisterPage() {
         if (error.code === 'auth/email-already-in-use') {
              toast({ variant: "destructive", title: "Registration Failed", description: "An account with this email already exists." });
         } else {
-            toast({ variant: "destructive", title: "Registration Failed", description: error.message || "An unexpected error occurred." });
+            // The contextual error is already emitted. We can show a generic toast.
+            toast({ variant: "destructive", title: "Registration Failed", description: "Could not create your account." });
         }
     } finally {
       setLoading(false);
@@ -274,3 +283,5 @@ export default function OwnerRegisterPage() {
     </div>
   );
 }
+
+    
