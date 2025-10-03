@@ -14,7 +14,7 @@ import { Home, Loader2 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
-import { collection, query, where, getDocs, updateDoc, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, DocumentData, QueryDocumentSnapshot, collectionGroup } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
 
 const formSchema = z.object({
@@ -41,20 +41,13 @@ export default function TenantOnboardingPage() {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setLoading(true);
+    let tenantDoc: QueryDocumentSnapshot<DocumentData> | null = null;
     try {
-        const ownersRef = collection(db, terminology.owner.collectionName);
-        const ownersSnapshot = await getDocs(ownersRef);
-        let tenantDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+        const tenantsQuery = query(collectionGroup(db, terminology.tenant.collectionName), where('roomCode', '==', values.roomCode));
+        const querySnapshot = await getDocs(tenantsQuery);
 
-        for (const ownerDoc of ownersSnapshot.docs) {
-             const tenantsRef = collection(db, `${terminology.owner.collectionName}/${ownerDoc.id}/${terminology.tenant.collectionName}`);
-             const q = query(tenantsRef, where('roomCode', '==', values.roomCode));
-             const querySnapshot = await getDocs(q);
-
-             if (!querySnapshot.empty) {
-                 tenantDoc = querySnapshot.docs[0];
-                 break;
-             }
+        if (!querySnapshot.empty) {
+            tenantDoc = querySnapshot.docs[0];
         }
 
 
@@ -107,12 +100,13 @@ export default function TenantOnboardingPage() {
 
     } catch (error: any) {
       console.error("Onboarding failed:", error);
-       // The permission error is already emitted, so we just show a generic message for other errors
-       if (!error.request) { // Check if it's not our custom error
+       // The permission error should be emitted by the .catch block.
+       // This toast will now only show for other types of errors.
+       if (!tenantDoc) { // Only show this if the doc was never found in the first place
             toast({
                 variant: "destructive",
                 title: "Onboarding Failed",
-                description: "An unexpected error occurred. The permission error has been logged for review.",
+                description: "An unexpected error occurred. Please try again later.",
             });
        }
     } finally {
