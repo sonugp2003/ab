@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Home, Loader2 } from 'lucide-react';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { useFirestore } from '@/firebase';
+import { useFirestore, errorEmitter, FirestorePermissionError } from '@/firebase';
 import { collection, query, where, getDocs, updateDoc, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import { useUseCase } from '@/context/use-case-context';
 
@@ -82,12 +82,24 @@ export default function TenantOnboardingPage() {
         return;
       }
 
-      await updateDoc(tenantDoc.ref, {
+      const updatedData = {
         name: values.fullName,
         email: values.email,
         isRegistered: true,
         // The password is not stored in this simplified version per prompt
-      });
+      };
+
+      await updateDoc(tenantDoc.ref, updatedData)
+        .catch(serverError => {
+            const permissionError = new FirestorePermissionError({
+                path: tenantDoc!.ref.path,
+                operation: 'update',
+                requestResourceData: updatedData,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+            // Re-throw to be caught by the outer catch block
+            throw serverError;
+        });
 
       toast({
         title: "Onboarding Successful!",
@@ -98,11 +110,14 @@ export default function TenantOnboardingPage() {
 
     } catch (error: any) {
       console.error("Onboarding failed:", error);
-      toast({
-        variant: "destructive",
-        title: "Onboarding Failed",
-        description: error.message || "An unexpected error occurred.",
-      });
+       // The permission error is already emitted, so we just show a generic message for other errors
+       if (!error.request) { // Check if it's not our custom error
+            toast({
+                variant: "destructive",
+                title: "Onboarding Failed",
+                description: "An unexpected error occurred. The permission error has been logged for review.",
+            });
+       }
     } finally {
       setLoading(false);
     }
