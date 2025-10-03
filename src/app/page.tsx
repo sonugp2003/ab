@@ -77,7 +77,7 @@ export default function Home() {
               className="relative flex flex-col items-center justify-center"
             >
               <div className="absolute w-48 h-48 rounded-full bg-primary/20 animate-pulse-slow"></div>
-              <Image src="/logo.png" alt="Roommate Hub Logo" width={80} height={80} className="z-10" data-ai-hint="logo building" />
+              <Image src="/logo.png" alt="Roommate Hub Logo" width={80} height={80} className="z-10" data-ai-hint="logo building" priority />
               <h1 className="text-4xl font-bold z-10 mt-4 animate-shine bg-gradient-to-r from-[#FF4500] via-yellow-300 to-[#FF4500] bg-[length:200%_100%] bg-clip-text text-transparent">Roommate Hub</h1>
             </motion.div>
           </motion.div>

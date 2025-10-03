@@ -221,7 +221,7 @@ export default function TenantDashboardPage() {
       <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur">
         <div className="container flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center space-x-2">
-             <Image src="/logo.png" alt="Roommate Hub Logo" width={32} height={32} data-ai-hint="logo building" />
+             <Image src="/logo.png" alt="Roommate Hub Logo" width={32} height={32} data-ai-hint="logo building" priority />
             <span className="inline-block font-bold">{terminology.appName}</span>
           </Link>
           <div className="flex items-center space-x-2">
