@@ -34,13 +34,16 @@ export default function OwnerLoginPage() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       
+      // Check if a profile for THIS use case exists
       const ownersRef = collection(db, terminology.owner.collectionName);
       const q = query(ownersRef, where("uid", "==", userCredential.user.uid));
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
+        // User is authenticated but has no profile for this use case.
+        // This prevents them from accessing a dashboard that requires a profile.
         await signOut(auth);
-        setError(`No ${terminology.owner.singular.toLowerCase()} account found with this email for this use case. Please sign up.`);
+        setError(`No ${terminology.owner.singular.toLowerCase()} account found for this email. You may need to register for this use case or check your login details.`);
         setLoading(false);
         return;
       }
@@ -75,9 +78,8 @@ export default function OwnerLoginPage() {
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
-        // This is a new user for this use case.
-        // Redirect them to the registration page to complete their profile.
-        // We can pass their details in session storage to pre-fill the form.
+        // This is a new user for this use case, or they are an existing user
+        // from a different use case. Redirect them to register to create a profile.
         if (typeof window !== 'undefined') {
             sessionStorage.setItem('google_auth_user', JSON.stringify({
                 displayName: user.displayName,
@@ -86,15 +88,15 @@ export default function OwnerLoginPage() {
         }
         router.push('/owner/register');
       } else {
-        // This is an existing user, log them in.
+        // This is an existing user for this use case, log them in.
         if (typeof window !== 'undefined') {
           localStorage.setItem('ownerEmail', user.email || '');
         }
         router.push('/owner/dashboard');
       }
     } catch (error: any) {
-        setError("Failed to sign in with Google. Please try again.");
         console.error("Google sign-in failed:", error);
+        setError("Failed to sign in with Google. Please try again.");
     } finally {
         setGoogleLoading(false);
     }
